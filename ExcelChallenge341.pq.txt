@@ -1,0 +1,62 @@
+let
+    // Decompress and Convert Source Data to Table
+    DecompressedSource = Table.FromRows(
+        Json.Document(
+            Binary.Decompress(
+                Binary.FromText("i45WslCK1YlWMjcEU5ZGEK6poZG5gQGYaWZgYG5samAGVWdmYmhmZGJqamisFBsLAA==", BinaryEncoding.Base64), 
+                Compression.Deflate
+            )
+        ), 
+        let _t = ((type nullable text) meta [Serialized.Text = true]) 
+        in type table [#"Number String" = _t]
+    ),
+
+    // Extract Odd Positioned Characters
+    ExtractOddChars = Table.AddColumn(
+        DecompressedSource, 
+        "Odd position", 
+        each Text.Combine(
+            List.Transform(
+                {1..Text.Length([Number String])}, 
+                (index) => if Number.Mod(index, 2) <> 0 then Text.Middle([Number String], index - 1, 1) else null
+            )
+        )
+    ),
+
+    // Extract Even Positioned Characters
+    ExtractEvenChars = Table.AddColumn(
+        ExtractOddChars, 
+        "Even position", 
+        each Text.Combine(
+            List.Transform(
+                {1..Text.Length([Number String])}, 
+                (index) => if Number.Mod(index, 2) = 0 then Text.Middle([Number String], index - 1, 1) else null
+            )
+        )
+    ),
+
+    // Sort Characters in Odd Position Column
+    SortOddChars = Table.TransformColumns(
+        ExtractEvenChars, 
+        {"Odd position", each Text.Combine(List.Sort(Text.ToList(_))), type text}
+    ),
+
+    // Combine Odd and Even Positioned Characters Alternately
+    MergeOddEvenChars = Table.AddColumn(
+        SortOddChars, 
+        "Sorted", 
+        each let 
+            oddList = Text.ToList([Odd position]),
+            evenList = Text.ToList([Even position]),
+            maxLength = List.Max({List.Count(oddList), List.Count(evenList)}),
+            combinedList = List.Generate(
+                () => [i = 0], 
+                each [i] < maxLength, 
+                each [i = [i] + 1], 
+                each (if [i] < List.Count(oddList) then oddList{[i]} else "") & (if [i] < List.Count(evenList) then evenList{[i]} else "")
+            )
+        in 
+            Text.Combine(combinedList)
+    )
+in
+    MergeOddEvenChars
